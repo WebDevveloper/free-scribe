@@ -1,17 +1,77 @@
-# React + Vite
+## free-scribe — запись, транскрибация, перевод и экспорт текста (React + Vite, Web Workers, Transformers)
+**Кратко (30 сек):** одностраничное приложение: записывает микрофон или принимает аудиофайл → транскрибирует в текст → (опционально) переводит → позволяет скачать как .txt. Обработка делается в браузере рабочими потоками (Web Workers) через @xenova/transformers (сервер не обязателен).
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+**Origin & статус.** Начальный прототип собирался под дедлайн — сейчас проект приводится к стабильному состоянию: выбор многоязычной модели, корректная индикация загрузки/прогресса, устранение зависаний и чёткий fallback-механизм.
 
-Currently, two official plugins are available:
+## Демо / скриншоты
+- Деплой: добавить ссылку (Netlify/Vercel для фронта; Render/Railway для API)
+- Скриншоты: `./docs/screenshots/` (главная, карточка ПК, бронирование, админ-список ПК, Lighthouse mobile)
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react/README.md) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+## Стек
+- **Frontend:** React 18, Vite, TypeScript/JSX
+- **UI:** Tailwind/HeroUI (если подключены), кастомные компоненты
+- **Воркеры:** Web Workers — src/utils/whisper.worker.js, src/utils/translate.worker.js
+- **ML:** @xenova/transformers (Whisper-шкала для ASR, NLLB/MBART для перевода)
+- **Сервер:** не обязателен. В репо есть учебный express-скрипт, но продакшен-сборка работает целиком клиент-сайд.
 
-# Description
-It's app can transcribe audio to text.
+## Фичи (то, что есть сейчас)
+- **Запись** с микрофона и **аплоад** аудиофайла
+- **Транскрибация** аудио в текст (через whisper.worker.js)
+- **Перевод** полученного текста на выбранный язык (через translate.worker.js)
+- **Экспорт** результата в .txt
+- **Статусы/прогресс** загрузки и инициализации моделей (показ в UI)
 
-Это приложение работало одно время нормально, но сейчас оно снова чутка сломалось.
-Поэтому оно в разработке и со временем будет завершено.
-Стоит отметить, что русский язык не очень хорошо понимает приложение в отличии от английского, но в него встроен переводчик когда дело доходит до текста.
+> Примечание: первая инициализация модели занимает время (кэш модели подгружается и компилируется в браузере).
+  
+## Архитектура (кратко)
+```
+src/
+  App.jsx                   # основной флоу: запись/аплоад → транскрибация → перевод → экспорт
+  components/
+    HomePage.jsx            # входные точки UI
+    FileDisplay.jsx         # предпросмотр файла/волн
+    Transcribing.jsx        # прогресс/логи по шагам
+  utils/
+    whisper.worker.js       # Web Worker: pipeline('automatic-speech-recognition', 'Xenova/whisper-*')
+    translate.worker.js     # Web Worker: pipeline('translation', <модель перевода>)
+    presets.js              # маппинги языков/кодеков/настроек
+    api.js                  # учебный express-скрипт (для dev), в проде не нужен
+```
 
-Само приложеение использует модель openai для своей работы.
+# Потоки данных
+1. App → отправляет в whisper.worker аудиобуфер + опции (model, chunk_length, language, task)
+2. Worker прогоняет pipeline() с прогресс-эвентами → шлёт в UI статус/частичные результаты
+3. Текст → в translate.worker (по запросу) → результирующий текст в UI → экспорт .txt
+
+## Переменные окружения
+В продакшене не требуются (клиент-сайд inference). Для dev можно хранить:
+```bash
+VITE_TRANSFORMERS_CACHE=/models        # кастомный кэш для моделей (опционально)
+VITE_ASR_MODEL=Xenova/whisper-small    # модель ASR (см. ниже)
+VITE_TRANSLATE_MODEL=Xenova/nllb-200-distilled-600M  # пример
+```
+
+## Известные ограничения / баги
+- Возможное зависание на экране загрузки перед транскрибации
+- Транскрибация только английского языка
+
+## Roadmap
+- [ ] Многоязычная модель по умолчанию (whisper-small без .en) + выбор языка/Auto
+- [ ] Параметры чанков: chunk_length_s, stride_length_s — меньше RAM, стабильнее на длинных файлах
+- [ ] **Перевод:** явный выбор модели (nllb/mbart), спиннеры и пустые состояния
+- [ ] **Экспорт:** .txt + .srt (опция «экспорт субтитров»)
+- [ ] **Архитектура:** вынести учебный express из src/ в /server, dev-proxy /api
+- [ ] **Облако:** Cloud-опция (OpenAI Whisper API) с VITE_MODE=local|cloud
+- [ ] **Тесты:** unit для пайплайнов параметров; e2e — «аплоад → транскрибация → перевод → экспорт»
+- [ ] **Скриншоты:** Lighthouse и демо-видео 60–90 сек
+
+## Цель проекта
+Показать практичный ASR → перевод → экспорт флоу в чистом фронтенде: без сервера, с воркерами и кэшированием моделей. Для продакшена — опциональная интеграция с облачными API.
+
+## Запуск
+```bash
+npm i
+npm run dev         # http://localhost:5173
+npm run build
+npm run preview
+```
